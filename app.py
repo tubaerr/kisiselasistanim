@@ -8,11 +8,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 # --- AYARLAR (HEM PC HEM BULUT UYUMLU) ---
-# Önce PC'deki .env dosyasını yüklemeyi dene
 load_dotenv()
-
-# Şifreleri alma mantığı:
-# Eğer PC'deysek os.environ'dan, Buluttaysak st.secrets'tan al.
 
 try:
     if os.environ.get("OPENAI_API_KEY"):
@@ -29,12 +25,12 @@ except:
     st.error("Şifreler bulunamadı! Lütfen Secrets ayarlarını kontrol et.")
     st.stop()
 
-# İstemcileri Başlat
 client = OpenAI(api_key=API_KEY)
 GONDEREN_MAIL = MAIL_ADRESIM
 GONDEREN_SIFRE = MAIL_SIFRESI
 
-st.set_page_config(page_title="Kişisel Asistanım", page_icon="🤖")
+# Sayfa Başlığı ve İkonu
+st.set_page_config(page_title="Tuba'nın Asistanı", page_icon="👑")
 
 # --- FONKSİYONLAR ---
 
@@ -69,7 +65,7 @@ def mail_gonder(kime, konu, icerik):
         return False
 
 def alarmlari_kontrol_et():
-    """Görevi yaklaşanları kontrol eder ve mail atar."""
+    """Belirli günlerde mail atar (30, 21, 14, 7, 2 gün kala)."""
     loglar = []
     try:
         with open("gorevler.json", "r", encoding="utf-8") as f:
@@ -80,6 +76,9 @@ def alarmlari_kontrol_et():
     bugun = datetime.now()
     mail_gonderildi = False
     
+    # Mail atılacak kritik gün sayıları
+    kritik_gunler = [30, 21, 14, 7, 2]
+
     for gorev in gorevler:
         tarih_str = gorev["tarih"]
         olay = gorev["olay"]
@@ -87,49 +86,65 @@ def alarmlari_kontrol_et():
             etkinlik_tarihi = datetime.strptime(tarih_str, "%Y-%m-%d")
             kalan_gun = (etkinlik_tarihi - bugun).days + 1
             
-            if 0 <= kalan_gun <= 30:
-                mail_gonder(GONDEREN_MAIL, f"⚠️ HATIRLATMA: {olay}", f"{olay} etkinliğine {kalan_gun} gün kaldı.")
-                loglar.append(f"🚨 {olay}: {kalan_gun} gün kaldı (Mail Atıldı!)")
+            # Kalan gün, listemizdeki kritik günlerden biri mi?
+            if kalan_gun in kritik_gunler:
+                konu = f"⚠️ HATIRLATMA: {olay} ({kalan_gun} Gün Kaldı!)"
+                icerik = f"Merhaba Tuba,\n\n'{olay}' etkinliğine tam {kalan_gun} gün kaldı.\nChecklist'ini kontrol etmeyi unutma!\n\nTarih: {tarih_str}\n\nSevgiler,\nDijital Asistanın."
+                
+                mail_gonder(GONDEREN_MAIL, konu, icerik)
+                loglar.append(f"🚨 {olay}: {kalan_gun} gün kaldı -> MAIL ATILDI ✅")
                 mail_gonderildi = True
+                
+            elif kalan_gun == 0:
+                mail_gonder(GONDEREN_MAIL, f"BUGÜN BÜYÜK GÜN: {olay}", f"İyi şanslar! Bugün {olay} günü.")
+                loglar.append(f"🏁 {olay}: BUGÜN!")
+                mail_gonderildi = True
+                
             elif kalan_gun < 0:
                 loglar.append(f"❌ {olay}: Geçmiş etkinlik.")
             else:
-                loglar.append(f"⏳ {olay}: {kalan_gun} gün var.")
+                # Mail atılmayan günler
+                loglar.append(f"⏳ {olay}: {kalan_gun} gün var. (Mail günü değil)")
         except:
             pass
             
     if not mail_gonderildi:
-        loglar.append("✅ Yaklaşan acil bir durum yok.")
+        loglar.append("✅ Bugün mail atılacak kritik bir tarih yok.")
     return loglar
 
 # --- ARAYÜZ (FRONTEND) ---
 
-st.title("🤖 Kişisel Asistan & Planlayıcı")
+st.title("👑 Tuba'nın Kişisel Asistanı ve Planlayıcısı")
 
 # Yan Menü (Sidebar)
 with st.sidebar:
     st.header("⚙️ Kontrol Paneli")
-    if st.button("📅 Tarihleri Kontrol Et & Mail At"):
-        with st.spinner("Takvim taranıyor..."):
+    
+    if st.button("📅 Takvimi Kontrol Et"):
+        with st.spinner("Tarihler hesaplanıyor..."):
             sonuclar = alarmlari_kontrol_et()
             for sonuc in sonuclar:
-                st.write(sonuc)
-            st.success("Kontrol tamamlandı!")
+                if "MAIL ATILDI" in sonuc:
+                    st.success(sonuc)
+                elif "BUGÜN" in sonuc:
+                    st.warning(sonuc)
+                else:
+                    st.info(sonuc)
 
     st.divider()
-    st.write("Kayıtlı Görevler:")
+    st.write("📌 Kayıtlı Etkinlikler:")
     try:
         with open("gorevler.json", "r", encoding="utf-8") as f:
             veriler = json.load(f)
             for v in veriler:
-                st.caption(f"{v['tarih']} - {v['olay']}")
+                st.caption(f"🗓 {v['tarih']} - {v['olay']}")
     except:
-        st.caption("Henüz görev yok.")
+        st.caption("Liste boş.")
 
 # Sohbet Alanı
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "system", "content": "Sen yardımsever bir asistan ve etkinlik planlayıcısısın. Kullanıcı tarihli bir etkinlik verirse önce 'gorev_kaydet' aracını kullan, sonra checklist hazırla."}
+        {"role": "system", "content": "Sen Tuba'nın kişisel asistanısın. Kullanıcı tarihli bir etkinlik verirse 'gorev_kaydet' ile kaydet ve checklist hazırla."}
     ]
 
 for message in st.session_state.messages:
@@ -137,7 +152,7 @@ for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-if prompt := st.chat_input("Bir etkinlik planlayalım mı?"):
+if prompt := st.chat_input("Yeni bir planın mı var Tuba?"):
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
@@ -179,7 +194,7 @@ if prompt := st.chat_input("Bir etkinlik planlayalım mı?"):
                         "name": "gorev_kaydet",
                         "content": sonuc
                     })
-                    st.toast(f"💾 {args['olay_adi']} başarıyla kaydedildi!", icon="✅")
+                    st.toast(f"💾 {args['olay_adi']} listeye eklendi!", icon="✅")
 
             final_response = client.chat.completions.create(
                 model="gpt-4o",
