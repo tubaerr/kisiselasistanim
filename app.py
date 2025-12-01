@@ -7,13 +7,34 @@ from email.mime.text import MIMEText
 from dotenv import load_dotenv
 from openai import OpenAI
 
-# --- AYARLAR VE KURULUMLAR ---
+# --- AYARLAR (HEM PC HEM BULUT UYUMLU) ---
+# Önce PC'deki .env dosyasını yüklemeyi dene
 load_dotenv()
-st.set_page_config(page_title="Kişisel Asistanım", page_icon="🤖")
 
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-GONDEREN_MAIL = os.environ.get("MAIL_ADRESIM")
-GONDEREN_SIFRE = os.environ.get("MAIL_SIFRESI")
+# Şifreleri alma mantığı:
+# Eğer PC'deysek os.environ'dan, Buluttaysak st.secrets'tan al.
+
+try:
+    if os.environ.get("OPENAI_API_KEY"):
+        # PC Modu
+        API_KEY = os.environ.get("OPENAI_API_KEY")
+        MAIL_ADRESIM = os.environ.get("MAIL_ADRESIM")
+        MAIL_SIFRESI = os.environ.get("MAIL_SIFRESI")
+    else:
+        # Bulut Modu (Streamlit Cloud)
+        API_KEY = st.secrets["OPENAI_API_KEY"]
+        MAIL_ADRESIM = st.secrets["MAIL_ADRESIM"]
+        MAIL_SIFRESI = st.secrets["MAIL_SIFRESI"]
+except:
+    st.error("Şifreler bulunamadı! Lütfen Secrets ayarlarını kontrol et.")
+    st.stop()
+
+# İstemcileri Başlat
+client = OpenAI(api_key=API_KEY)
+GONDEREN_MAIL = MAIL_ADRESIM
+GONDEREN_SIFRE = MAIL_SIFRESI
+
+st.set_page_config(page_title="Kişisel Asistanım", page_icon="🤖")
 
 # --- FONKSİYONLAR ---
 
@@ -44,6 +65,7 @@ def mail_gonder(kime, konu, icerik):
             smtp.send_message(msg)
         return True
     except Exception as e:
+        st.error(f"Mail hatası: {e}")
         return False
 
 def alarmlari_kontrol_et():
@@ -84,7 +106,7 @@ def alarmlari_kontrol_et():
 
 st.title("🤖 Kişisel Asistan & Planlayıcı")
 
-# Yan Menü (Sidebar) - Alarm Butonu Buraya
+# Yan Menü (Sidebar)
 with st.sidebar:
     st.header("⚙️ Kontrol Paneli")
     if st.button("📅 Tarihleri Kontrol Et & Mail At"):
@@ -110,19 +132,15 @@ if "messages" not in st.session_state:
         {"role": "system", "content": "Sen yardımsever bir asistan ve etkinlik planlayıcısısın. Kullanıcı tarihli bir etkinlik verirse önce 'gorev_kaydet' aracını kullan, sonra checklist hazırla."}
     ]
 
-# Eski mesajları ekrana bas
 for message in st.session_state.messages:
     if message["role"] != "system" and message["role"] != "tool":
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-# Kullanıcıdan mesaj al
 if prompt := st.chat_input("Bir etkinlik planlayalım mı?"):
-    # 1. Kullanıcı mesajını ekrana bas
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # 2. GPT'ye gönder
     tools = [{
         "type": "function",
         "function": {
@@ -148,37 +166,29 @@ if prompt := st.chat_input("Bir etkinlik planlayalım mı?"):
         
         msg = response.choices[0].message
         
-        # 3. Eğer Fonksiyon Çağırırsa
         if msg.tool_calls:
-            st.session_state.messages.append(msg) # Fonksiyon çağrısını hafızaya at
-            
+            st.session_state.messages.append(msg)
             for tool_call in msg.tool_calls:
                 if tool_call.function.name == "gorev_kaydet":
                     args = json.loads(tool_call.function.arguments)
                     sonuc = gorev_kaydet(args["tarih"], args["olay_adi"])
                     
-                    # Tool sonucunu hafızaya ekle
                     st.session_state.messages.append({
                         "tool_call_id": tool_call.id,
                         "role": "tool",
                         "name": "gorev_kaydet",
                         "content": sonuc
                     })
-                    
-                    # Bilgi mesajı göster (Geçici)
                     st.toast(f"💾 {args['olay_adi']} başarıyla kaydedildi!", icon="✅")
 
-            # Fonksiyon sonucundan sonra tekrar cevap üret (Checklist için)
             final_response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=st.session_state.messages
             )
             ai_cevap = final_response.choices[0].message.content
-            
         else:
             ai_cevap = msg.content
 
-        # 4. Asistanın cevabını ekrana bas
         with st.chat_message("assistant"):
             st.markdown(ai_cevap)
         
