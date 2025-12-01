@@ -34,11 +34,9 @@ st.set_page_config(page_title="Tuba'nın Asistanı", page_icon="👑")
 
 def google_calendar_link(tarih, olay):
     """Google Takvim için özel link oluşturur."""
-    # Tarihi YYYYMMDD formatına çevir
     try:
         dt = datetime.strptime(tarih, "%Y-%m-%d")
         tarih_format = dt.strftime("%Y%m%d")
-        # Bitiş tarihi olarak ertesi günü verelim (Tam gün etkinliği)
         ertesi_gun = dt.strftime("%Y%m%d") 
         
         base_url = "https://www.google.com/calendar/render?action=TEMPLATE"
@@ -63,14 +61,11 @@ def gorev_kaydet(tarih, olay_adi):
     liste.append({"tarih": tarih, "olay": olay_adi})
     with open("gorevler.json", "w", encoding="utf-8") as f:
         json.dump(liste, f, ensure_ascii=False, indent=4)
-    return f"✅ Kaydedildi: {olay_adi}"
+    return f"Etkinlik veritabanına kaydedildi: {olay_adi}"
 
 def gorev_sil(silinecek_olaylar):
-    """Seçilen olayları listeden siler."""
     eski_liste = gorev_listesini_yukle()
-    # Silinecekler listesinde OLMAYANLARI yeni listeye al (Filtreleme)
     yeni_liste = [x for x in eski_liste if x['olay'] not in silinecek_olaylar]
-    
     with open("gorevler.json", "w", encoding="utf-8") as f:
         json.dump(yeni_liste, f, ensure_ascii=False, indent=4)
 
@@ -118,11 +113,10 @@ def alarmlari_kontrol_et():
 
 st.title("👑 Tuba'nın Kişisel Asistanı ve Planlayıcısı")
 
-# SİDEBAR (Yan Menü)
+# SİDEBAR
 with st.sidebar:
     st.header("⚙️ Kontrol Paneli")
     
-    # 1. Kontrol Butonu
     if st.button("📅 Takvimi Tara & Mail At"):
         with st.spinner("Kontrol ediliyor..."):
             sonuclar = alarmlari_kontrol_et()
@@ -133,19 +127,16 @@ with st.sidebar:
     
     st.divider()
     
-    # 2. Silme İşlemi (YENİ)
     st.subheader("🗑 Görev Sil")
     mevcut_gorevler = gorev_listesini_yukle()
     if mevcut_gorevler:
-        # Sadece olay adlarını listeye çek
         olay_listesi = [x['olay'] for x in mevcut_gorevler]
         silinecekler = st.multiselect("Silinecekleri Seç:", olay_listesi)
-        
         if st.button("Seçilenleri Sil"):
             if silinecekler:
                 gorev_sil(silinecekler)
                 st.success("Silindi! Sayfa yenileniyor...")
-                st.rerun() # Sayfayı yenile
+                st.rerun()
     else:
         st.caption("Silinecek görev yok.")
 
@@ -154,9 +145,17 @@ with st.sidebar:
     for g in gorev_listesini_yukle():
         st.caption(f"{g['tarih']} - {g['olay']}")
 
-# SOHBET
+# SOHBET KISMI
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "system", "content": "Tuba'nın asistanısın. Tarihli işleri kaydet ve checklist hazırla."}]
+    st.session_state.messages = [{
+        "role": "system", 
+        "content": """Sen Tuba'nın profesyonel asistanısın.
+        GÖREVİN:
+        1. Kullanıcı bir etkinlik tarihi verdiğinde MUTLAKA 'gorev_kaydet' aracını kullan.
+        2. Kayıt işlemi bittikten hemen sonra, susma!
+        3. Kullanıcıya o etkinlik için yapılması gerekenleri içeren DETAYLI BİR CHECKLIST, ÖNERİLER ve TAVSİYELER listesi hazırla.
+        4. Cevabın zengin, madde madde ve yol gösterici olsun."""
+    }]
 
 for msg in st.session_state.messages:
     if msg["role"] != "system" and msg["role"] != "tool":
@@ -167,7 +166,6 @@ if prompt := st.chat_input("Yeni bir etkinlik ekle..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.chat_message("user").markdown(prompt)
 
-    # Tool Tanımı
     tools = [{
         "type": "function",
         "function": {
@@ -198,11 +196,11 @@ if prompt := st.chat_input("Yeni bir etkinlik ekle..."):
                         "tool_call_id": tool.id, "role": "tool", "name": "gorev_kaydet", "content": res
                     })
                     
-                    # --- GOOGLE TAKVİM LİNKİ OLUŞTURMA (YENİ) ---
                     link = google_calendar_link(args["tarih"], args["olay_adi"])
-                    st.success(f"Etkinlik Kaydedildi! 👇")
-                    st.markdown(f"[📅 **Google Takvime Eklemek İçin Tıkla**]({link})", unsafe_allow_html=True)
+                    st.success(f"✅ Etkinlik Kaydedildi: {args['olay_adi']}")
+                    st.markdown(f"👉 [**Google Takvime Eklemek İçin Tıkla**]({link})", unsafe_allow_html=True)
 
+            # Fonksiyon sonucunu verdikten sonra GPT'nin konuşması için ikinci istek
             final = client.chat.completions.create(model="gpt-4o", messages=st.session_state.messages)
             yanit = final.choices[0].message.content
         else:
