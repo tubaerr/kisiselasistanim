@@ -37,8 +37,6 @@ def google_calendar_link(tarih, olay):
     try:
         dt = datetime.strptime(tarih, "%Y-%m-%d")
         tarih_format = dt.strftime("%Y%m%d")
-        ertesi_gun = dt.strftime("%Y%m%d") 
-        
         base_url = "https://www.google.com/calendar/render?action=TEMPLATE"
         params = {
             "text": f"👑 {olay}",
@@ -63,9 +61,10 @@ def gorev_kaydet(tarih, olay_adi):
         json.dump(liste, f, ensure_ascii=False, indent=4)
     return f"Etkinlik veritabanına kaydedildi: {olay_adi}"
 
-def gorev_sil(silinecek_olaylar):
+def gorev_sil_tekli(olay_adi):
+    """Tek bir olayı isminden bulup siler."""
     eski_liste = gorev_listesini_yukle()
-    yeni_liste = [x for x in eski_liste if x['olay'] not in silinecek_olaylar]
+    yeni_liste = [x for x in eski_liste if x['olay'] != olay_adi]
     with open("gorevler.json", "w", encoding="utf-8") as f:
         json.dump(yeni_liste, f, ensure_ascii=False, indent=4)
 
@@ -88,7 +87,7 @@ def alarmlari_kontrol_et():
     
     bugun = datetime.now()
     loglar = []
-    kritik_gunler = [30, 21, 14, 7, 2] # Mail atılacak günler
+    kritik_gunler = [30, 21, 14, 7, 2] 
 
     for gorev in liste:
         try:
@@ -109,6 +108,38 @@ def alarmlari_kontrol_et():
             pass
     return loglar
 
+# --- DETAY PENCERESİ (POP-UP) ---
+@st.dialog("📅 Etkinlik Detayları")
+def detay_goster(gorev):
+    st.header(gorev['olay'])
+    st.write(f"**Tarih:** {gorev['tarih']}")
+    
+    # Kalan Gün Hesabı
+    try:
+        dt = datetime.strptime(gorev['tarih'], "%Y-%m-%d")
+        bugun = datetime.now()
+        kalan = (dt - bugun).days + 1
+        
+        if kalan > 0:
+            st.info(f"⏳ Bu etkinliğe **{kalan} gün** kaldı.")
+        elif kalan == 0:
+            st.warning("🔥 BUGÜN!")
+        else:
+            st.error("❌ Bu etkinlik geçmiş.")
+    except:
+        st.write("Tarih hesaplanamadı.")
+
+    # Linkler ve Butonlar
+    link = google_calendar_link(gorev['tarih'], gorev['olay'])
+    st.markdown(f"👉 [**Google Takvim'de Aç**]({link})")
+    
+    st.divider()
+    
+    if st.button("🗑 Bu Etkinliği Sil", type="primary"):
+        gorev_sil_tekli(gorev['olay'])
+        st.success("Silindi! Kapatıp sayfayı yenileyin.")
+        st.rerun()
+
 # --- ARAYÜZ ---
 
 st.title("👑 Tuba'nın Kişisel Asistanı ve Planlayıcısı")
@@ -117,7 +148,7 @@ st.title("👑 Tuba'nın Kişisel Asistanı ve Planlayıcısı")
 with st.sidebar:
     st.header("⚙️ Kontrol Paneli")
     
-    if st.button("📅 Takvimi Tara & Mail At"):
+    if st.button("📅 Tarihleri Tara & Mail At", use_container_width=True):
         with st.spinner("Kontrol ediliyor..."):
             sonuclar = alarmlari_kontrol_et()
             for s in sonuclar:
@@ -126,24 +157,18 @@ with st.sidebar:
                 else: st.write(s)
     
     st.divider()
+    st.subheader("📌 Etkinliklerin")
+    st.caption("Detay görmek için üzerine tıkla 👇")
     
-    st.subheader("🗑 Görev Sil")
-    mevcut_gorevler = gorev_listesini_yukle()
-    if mevcut_gorevler:
-        olay_listesi = [x['olay'] for x in mevcut_gorevler]
-        silinecekler = st.multiselect("Silinecekleri Seç:", olay_listesi)
-        if st.button("Seçilenleri Sil"):
-            if silinecekler:
-                gorev_sil(silinecekler)
-                st.success("Silindi! Sayfa yenileniyor...")
-                st.rerun()
-    else:
-        st.caption("Silinecek görev yok.")
-
-    st.divider()
-    st.subheader("📌 Kayıtlı Listesi")
-    for g in gorev_listesini_yukle():
-        st.caption(f"{g['tarih']} - {g['olay']}")
+    # LİSTEYİ BUTON OLARAK GÖSTERME
+    gorevler = gorev_listesini_yukle()
+    if not gorevler:
+        st.info("Henüz plan yok.")
+    
+    for i, g in enumerate(gorevler):
+        # Her etkinlik için bir buton oluşturuyoruz
+        if st.button(f"🗓 {g['tarih']} \n {g['olay']}", key=f"btn_{i}", use_container_width=True):
+            detay_goster(g)
 
 # SOHBET KISMI
 if "messages" not in st.session_state:
@@ -151,10 +176,9 @@ if "messages" not in st.session_state:
         "role": "system", 
         "content": """Sen Tuba'nın profesyonel asistanısın.
         GÖREVİN:
-        1. Kullanıcı bir etkinlik tarihi verdiğinde MUTLAKA 'gorev_kaydet' aracını kullan.
-        2. Kayıt işlemi bittikten hemen sonra, susma!
-        3. Kullanıcıya o etkinlik için yapılması gerekenleri içeren DETAYLI BİR CHECKLIST, ÖNERİLER ve TAVSİYELER listesi hazırla.
-        4. Cevabın zengin, madde madde ve yol gösterici olsun."""
+        1. Kullanıcı tarih verirse 'gorev_kaydet' aracını kullan.
+        2. Kayıttan sonra DETAYLI CHECKLIST hazırla.
+        """
     }]
 
 for msg in st.session_state.messages:
@@ -162,7 +186,7 @@ for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-if prompt := st.chat_input("Yeni bir etkinlik ekle..."):
+if prompt := st.chat_input("Yeni bir etkinlik planlayalım..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.chat_message("user").markdown(prompt)
 
@@ -197,10 +221,9 @@ if prompt := st.chat_input("Yeni bir etkinlik ekle..."):
                     })
                     
                     link = google_calendar_link(args["tarih"], args["olay_adi"])
-                    st.success(f"✅ Etkinlik Kaydedildi: {args['olay_adi']}")
-                    st.markdown(f"👉 [**Google Takvime Eklemek İçin Tıkla**]({link})", unsafe_allow_html=True)
+                    st.success(f"✅ Kaydedildi!")
+                    st.markdown(f"👉 [**Takvime Ekle**]({link})", unsafe_allow_html=True)
 
-            # Fonksiyon sonucunu verdikten sonra GPT'nin konuşması için ikinci istek
             final = client.chat.completions.create(model="gpt-4o", messages=st.session_state.messages)
             yanit = final.choices[0].message.content
         else:
